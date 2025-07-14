@@ -1,0 +1,24 @@
+{
+  "configurations": [
+    {
+      "name": "Linux",
+      "includePath": ["${workspaceFolder}"],
+      "defines": ["__linux__"],
+      "compilerPath": "/usr/bin/g++",
+      "cStandard": "c17",
+      "intelliSenseMode": "linux-gcc-x64"
+    },
+    {
+      "name": "Windows",
+      "includePath": [
+        "/usr/x86_64-w64-mingw32/include",
+        "${workspaceFolder}/../xpchat-lib/src"
+      ],
+      "defines": ["_WIN32"],
+      "compilerPath": "/usr/bin/x86_64-w64-mingw32-gcc",
+      "cStandard": "c17",
+      "intelliSenseMode": "windows-gcc-x64"
+    }
+  ],
+  "version": 4
+}
