@@ -11,12 +11,12 @@
 
 #include "iostream"
 
-bool ChatProtocol::writeInt(socket_t fd, const int data)
+bool ChatProtocol::writeInt(socket_t fd, const int data) noexcept
 {
     return send(fd, reinterpret_cast<const char *>(&data), sizeof(data), 0) == sizeof(data);
 }
 
-bool ChatProtocol::readInt(socket_t fd, int &data)
+bool ChatProtocol::readInt(socket_t fd, int &data) noexcept
 {
     int out;
     if (recv(fd, reinterpret_cast<char *>(&out), sizeof(out), 0) < sizeof(out))
@@ -26,7 +26,7 @@ bool ChatProtocol::readInt(socket_t fd, int &data)
     return true;
 }
 
-bool ChatProtocol::writeString(socket_t fd, const std::string &str)
+bool ChatProtocol::writeString(socket_t fd, const std::string &str) noexcept
 {
     size_t ipLen = str.size();
     if (send(fd, reinterpret_cast<const char *>(&ipLen), sizeof(size_t), 0) < sizeof(size_t))
@@ -37,7 +37,7 @@ bool ChatProtocol::writeString(socket_t fd, const std::string &str)
     return true;
 }
 
-bool ChatProtocol::writeServer(socket_t fd, const Server &server)
+bool ChatProtocol::writeServer(socket_t fd, const Server &server) noexcept
 {
     if (!writeInt(fd, server.socket))
         return false;
