@@ -5,7 +5,6 @@
 // private:
 //     Chat() {}
 //     ~Chat() {}
-//     void readMFT();
 
 // public:
 //     static Chat &getInstance()
