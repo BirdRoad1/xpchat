@@ -5,95 +5,84 @@
 #include <thread>
 #include <unistd.h>
 #include "server_list.h"
-#include <chat_protocol.h>
+#include <xpchat/chat_protocol.h>
 
 void handleClient(std::string ip, int fd)
 {
     std::cout << "Received connection from " << ip << std::endl;
 
     // Let it identify itself first
-    std::string identityBuf;
-    if (!ChatProtocol::readString(fd, identityBuf)) {
+    std::string identity;
+    if (!ChatProtocol::readString(fd, identity))
+    {
         std::cout << "Client did not identify! Closing connection" << std::endl;
         close(fd);
         return;
     }
 
-    // read(fd, reinterpret_cast<char *>(&idLen), sizeof(idLen));
-    // std::string identityBuf(idLen + 1, '\0');
-    // ssize_t bytesRead;
-    // if ((bytesRead = read(fd, identityBuf.data(), idLen)) < idLen)
-    // {
-    //     std::cout << "Client did not identify! Closing connection" << std::endl;
-    //     close(fd);
-    //     return;
-    // }
-    // identityBuf.resize(bytesRead);
+    std::cout << "Identity: " << identity << std::endl;
 
-
-    std::cout << "Identity: " << identityBuf << std::endl;
-
-    bool isServer = identityBuf.starts_with("xpchatter-server");
-
-    std::cout << "IS_SERVER: " << isServer << std::endl;
+    bool isServer = identity.starts_with("xpchatter-server");
 
     time_t lastRegistrationTime = 0;
     while (1)
     {
-        std::string cmd;
-        if (!ChatProtocol::readString(fd, cmd)) {
-            std::cout << "Failed to read command! Closing connection" << std::endl;
-            close(fd);
-            return;
-        }
-
-        // size_t cmdLength = 4;
-        // std::string cmd(cmdLength + 1, '\0');
-        // if (read(fd, cmd.data(), cmdLength) != cmdLength)
-        // {
-        //     std::cout << "Failed to read command! Closing connection" << std::endl;
-        //     close(fd);
-        //     return;
-        // }
-        // cmd.resize(cmdLength);
-
-
-        if (cmd == "RSRV" && isServer)
+        try
         {
-            time_t now = time(NULL);
-            if (now - lastRegistrationTime <= 30)
+            std::string cmd;
+            if (!ChatProtocol::readString(fd, cmd))
             {
-                // too soon
-                std::cout << "Warning: client " << ip << " tried registering too quickly! (" << now - lastRegistrationTime << " seconds)" << std::endl;
+                std::cout << "Failed to read command! Closing connection" << std::endl;
+                ServerList::getInstance().removeServer(fd);
+                close(fd);
+                return;
+            }
+
+            std::cout << "Got command: " << cmd << cmd.length() << std::endl;
+
+            if (cmd == "RSRV" && isServer)
+            {
+                time_t now = time(NULL);
+                if (now - lastRegistrationTime <= 30)
+                {
+                    // too soon
+                    std::cout << "Warning: client " << ip << " tried registering too quickly! (" << now - lastRegistrationTime << " seconds)" << std::endl;
+                }
+                else
+                {
+                    // Register server
+                    lastRegistrationTime = now;
+                    ServerList::getInstance().addServer({.socket = fd, .ip = ip, .identifier = identity, .connectedTimestamp = lastRegistrationTime});
+                }
+            }
+            else if (cmd == "LSRV")
+            {
+                // List servers
+                std::vector<const Server *> servers = ServerList::getInstance().getServers();
+                // size_t serversCount = servers.size();
+                std::cout << "SENDING LSRV" << std::endl;
+                ChatProtocol::writeString(fd, "LSRV");
+                for (auto *server : servers)
+                {
+                    std::cout << "SENDING SERVER" << std::endl;
+                    ChatProtocol::writeString(fd, "SSRV");
+                    ChatProtocol::writeServer(fd, *server);
+                }
+
+                ChatProtocol::writeString(fd, "NSRV");
             }
             else
             {
-                // Register server
-                lastRegistrationTime = now;
-                std::cout << "ADD SERVER132:" << identityBuf << std::endl;
-                ServerList::getInstance().addServer({.socket = fd, .ip = ip, .identifier = identityBuf, .connectedTimestamp = lastRegistrationTime});
-            }
-        }
-        else if (cmd == "LSRV")
-        {
-            // List servers
-            std::vector<const Server *> servers = ServerList::getInstance().getServers();
-            // size_t serversCount = servers.size();
-            std::cout << "SENDING LSRV" << std::endl;
-            ChatProtocol::writeString(fd, "LSRV");
-            for (auto *server : servers)
-            {
-                ChatProtocol::writeServer(fd, *server);
+                std::cout << "NO match" << std::endl;
             }
 
-            ChatProtocol::writeString(fd, "NSRV");
         }
-        else
+        catch (std::exception &ex)
         {
-            std::cout << "NO match" << std::endl;
+            std::cout << "Caught exception in handle client thread" << ex.what() << std::endl;
+            close(fd);
+            ServerList::getInstance().removeServer(fd);
         }
-
-        std::cout << "Got command: " << cmd << std::endl;
     }
 }
 
@@ -162,10 +151,6 @@ int mainServer()
 
     std::string identity("xpchatter-server v1.0");
     ChatProtocol::writeString(sock, identity);
-    // size_t idLen = identity.size();
-    // send(sock, reinterpret_cast<char*>(&idLen), sizeof(idLen), 0);
-    // send(sock, identity.c_str(), identity.length(), 0);
-    // send(sock, "RSRV", 4, 0); // register server
     ChatProtocol::writeString(sock, "RSRV");
 
     // Allow clients to connect!
@@ -198,7 +183,7 @@ int mainServer()
         }
 
         std::string ip(inet_ntoa(client_addr.sin_addr));
-        std::thread(handleClient, ip, clnt_sock).detach(); //TODO: change func
+        std::thread(handleClient, ip, clnt_sock).detach(); // TODO: change func
     }
 
     return 0;
