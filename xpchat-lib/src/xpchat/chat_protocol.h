@@ -15,6 +15,8 @@ typedef int socket_t;
 class ChatProtocol
 {
 public:
+    static bool writeInt(socket_t fd, const int data);
+    static bool readInt(socket_t fd, int &data);
     static bool writeServer(socket_t fd, const Server &server);
     static bool readServer(socket_t fd, Server &server);
     static bool writeString(socket_t fd, const std::string &str);
