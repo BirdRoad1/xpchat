@@ -1,4 +1,4 @@
-#include "chat_protocol.h"
+#include "xpchat/chat_protocol.h"
 
 #ifdef __linux__
 #include <netinet/in.h>
@@ -10,6 +10,21 @@
 #endif
 
 #include "iostream"
+
+bool ChatProtocol::writeInt(socket_t fd, const int data)
+{
+    return send(fd, reinterpret_cast<const char *>(&data), sizeof(data), 0) == sizeof(data);
+}
+
+bool ChatProtocol::readInt(socket_t fd, int &data)
+{
+    int out;
+    if (recv(fd, reinterpret_cast<char *>(&out), sizeof(out), 0) < sizeof(out))
+        return false;
+
+    data = out;
+    return true;
+}
 
 bool ChatProtocol::writeString(socket_t fd, const std::string &str)
 {
@@ -24,7 +39,7 @@ bool ChatProtocol::writeString(socket_t fd, const std::string &str)
 
 bool ChatProtocol::writeServer(socket_t fd, const Server &server)
 {
-    if (!writeString(fd, "SSRV"))
+    if (!writeInt(fd, server.socket))
         return false;
     // Send IP
     if (!writeString(fd, server.ip))
@@ -61,6 +76,10 @@ bool ChatProtocol::readString(socket_t fd, std::string &str)
 
 bool ChatProtocol::readServer(socket_t fd, Server &server)
 {
+    int socket = -1;
+    if (!readInt(fd, socket))
+        return false;
+
     std::string ip;
     if (!readString(fd, ip))
         return false;
@@ -73,6 +92,6 @@ bool ChatProtocol::readServer(socket_t fd, Server &server)
     if (recv(fd, reinterpret_cast<char *>(&connectedTimestamp), sizeof(time_t), 0) < sizeof(time_t))
         return false;
 
-    server = {.ip = ip, .identifier = id, .connectedTimestamp = connectedTimestamp};
+    server = {.socket = socket, .ip = ip, .identifier = id, .connectedTimestamp = connectedTimestamp};
     return true;
 }
