@@ -1,4 +1,5 @@
 #include "central.h"
+#include "winsock2.h"
 #include <xpchat/chat_protocol.h>
 #include <limits>
 #include <stdexcept>
@@ -38,10 +39,8 @@ bool Central::connect()
     }
 
     std::cout << "Connected to central!" << std::endl;
-    std::string identity("xpchatter v1.0");
-    size_t idLen = identity.length();
-    send(sock, reinterpret_cast<const char *>(&idLen), sizeof(idLen), 0);
-    send(sock, identity.c_str(), idLen, 0);
+    ChatProtocol::writeString(sock, "xpchatter v1.0");
+    ChatProtocol::flush(sock);
 
     fd = sock;
     return true;
@@ -54,6 +53,8 @@ bool Central::listServers(std::vector<Server> &servers)
         return false;
     }
 
+    std::cout << "LIST SERV" << std::endl;
+
     std::vector<Server> srv;
 
     if (!ChatProtocol::writeString(fd, "LSRV"))
@@ -61,20 +62,23 @@ bool Central::listServers(std::vector<Server> &servers)
         return false;
     }
 
+    ChatProtocol::flush(fd);
+
     std::string cmd;
 
+    std::cout << "LIST SERV2" << std::endl;
     do
     {
         if (!ChatProtocol::readString(fd, cmd))
         {
             return false;
         }
-        
+
         std::cout << "Reading str: " << cmd << std::endl;
 
         if (cmd == "SSRV") // start server
         {
-            std::cout << "Found SSRV"<<std::endl;
+            std::cout << "Found SSRV" << std::endl;
             Server server;
             if (!ChatProtocol::readServer(fd, server))
             {
@@ -87,6 +91,8 @@ bool Central::listServers(std::vector<Server> &servers)
         }
     } while (cmd != "NSRV"); // end servers
     servers = srv;
+    std::cout << "LIST SERV3" << std::endl;
+
     return true;
 }
 
@@ -102,6 +108,8 @@ bool Central::sendServerJoin(int id)
 
     if (!ChatProtocol::writeInt(fd, id))
         return false;
+
+    ChatProtocol::flush(fd);
 
     return true;
 }

@@ -7,7 +7,7 @@
         "${workspaceFolder}/../xpchat-lib/src"
       ],
       "defines": ["_WIN32"],
-      "compilerPath": "/usr/bin/x86_64-w64-mingw32-gcc",
+      "compilerPath": "/usr/bin/x86_64-w64-mingw32-g++-posix",
       "cStandard": "c17",
       "intelliSenseMode": "windows-gcc-x64"
     }

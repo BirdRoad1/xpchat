@@ -2,7 +2,7 @@
 #include <string>
 #include "peer.h"
 
-struct Server : public Peer
+struct Client : public Peer
 {
-
+    std::string username;
 };

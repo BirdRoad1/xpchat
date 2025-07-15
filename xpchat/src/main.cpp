@@ -1,4 +1,5 @@
 #include "central.h"
+#include "winsock2.h"
 #include <windows.h>
 #include <commctrl.h>
 #include <iostream>
@@ -7,18 +8,62 @@
 #include <chrono>
 #include <iomanip>
 #include <xpchat/chat_protocol.h>
+#include "chat.h"
+#include <richedit.h>
+#include <thread>
 
 #define IDC_SCANBTN 1
 #define IDC_SERVER_LIST 2
 HWND window;
 HWND connectBtn;
 HWND statusText;
+HWND availableServersLabel;
 HWND serverListWindow;
+HWND chatBox;
+HWND inputBox;
 std::vector<Server> servers;
 
 void AddMenus(HWND hwnd)
 {
     connectBtn = CreateWindowExW(WS_EX_CLIENTEDGE, L"BUTTON", L"Connect to central server", WS_TABSTOP | WS_VISIBLE | WS_CHILD | BS_DEFPUSHBUTTON, 0, 0, 200, 50, hwnd, (HMENU)IDC_SCANBTN, GetModuleHandleW(NULL), NULL);
+}
+
+void SocketThread()
+{
+    while (true) {
+        
+    }
+    std::cout << "SOCKET THREAD" << std::endl;
+}
+
+void ShowChat()
+{
+    const Server *activeServer = Chat::getInstance().getActiveServer();
+    if (activeServer == nullptr)
+        return;
+
+    std::wstring status = std::wstring(L"Status: Connected to ") + std::wstring(activeServer->ip.begin(), activeServer->ip.end());
+    if (statusText != NULL)
+    {
+        SetWindowTextW(statusText, status.c_str());
+    }
+
+    if (availableServersLabel != NULL)
+    {
+        DestroyWindow(availableServersLabel);
+        availableServersLabel = NULL;
+    }
+
+    if (serverListWindow != NULL)
+    {
+        DestroyWindow(serverListWindow);
+        serverListWindow = 0;
+    }
+
+    chatBox = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"", WS_CHILD | WS_VISIBLE | ES_READONLY, 0, 25, 500, 415, window, NULL, GetModuleHandleW(NULL), 0);
+    inputBox = CreateWindowExW(WS_EX_CLIENTEDGE, L"RICHEDIT50W", L"", WS_CHILD | WS_VISIBLE, 0, 440, 500, 25, window, NULL, GetModuleHandleW(NULL), 0);
+
+    std::thread(SocketThread).detach();
 }
 
 void ConnectChatServer()
@@ -35,8 +80,8 @@ void ConnectChatServer()
             DestroyWindow(connectBtn);
         }
 
-        statusText = CreateWindowExW(WS_EX_CLIENTEDGE, L"Static", L"Status: Connected to central", WS_CHILD | WS_VISIBLE, 0, 0, 200, 25, window, NULL, GetModuleHandleW(NULL), 0);
-        CreateWindowExW(WS_EX_CLIENTEDGE, L"Static", L"Available chat servers:", WS_CHILD | WS_VISIBLE, 0, 25, 180, 25, window, NULL, GetModuleHandleW(NULL), 0);
+        statusText = CreateWindowExW(WS_EX_CLIENTEDGE, L"Static", L"Status: Connected to central", WS_CHILD | WS_VISIBLE, 0, 0, 500, 25, window, NULL, GetModuleHandleW(NULL), 0);
+        availableServersLabel = CreateWindowExW(WS_EX_CLIENTEDGE, L"Static", L"Available chat servers:", WS_CHILD | WS_VISIBLE, 0, 25, 180, 25, window, NULL, GetModuleHandleW(NULL), 0);
 
         // List servers
         try
@@ -148,7 +193,15 @@ LRESULT WndProc(
             {
                 const Server &server = servers[row];
                 std::cout << "Double clicked row:" << server.ip << std::endl;
-                Central::getInstance().sendServerJoin(server.socket);
+                if (Chat::getInstance().connect(server))
+                {
+                    Central::getInstance().sendServerJoin(server.socket);
+                    ShowChat();
+                }
+                else
+                {
+                    MessageBoxW(window, L"Connection failed", L"Failed to connect to server", MB_OK);
+                }
             }
         }
     }
@@ -160,6 +213,9 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
                    PSTR lpCmdLine, int nCmdShow)
 {
     std::cout << "XPChatter 1.0" << std::endl;
+
+    // Load rich edit
+    LoadLibraryA("Msftedit.dll");
 
     // socket startup
     WSADATA wsaData;
@@ -182,7 +238,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
     }
 
     HWND hwnd;
-    if (!(hwnd = CreateWindowW(newWindow.lpszClassName, L"XPChatter", WS_VISIBLE | WS_OVERLAPPEDWINDOW, 100, 100, 500, 500, NULL, NULL, hInstance, NULL)))
+    if (!(hwnd = CreateWindowW(newWindow.lpszClassName, L"XPChatter", WS_VISIBLE | WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX, 100, 100, 500, 500, NULL, NULL, hInstance, NULL)))
     {
         std::cout << "Failed to create window" << std::endl;
         return -1;

@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.15)
 
-set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static-libgcc -static-libstdc++")
+set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static")
 
 project(xpchatter VERSION 1.0 LANGUAGES CXX)
 
@@ -18,6 +18,6 @@ add_subdirectory(../xpchat-lib ${CMAKE_BINARY_DIR}/bin/xpchat-lib)
 add_executable(xpchatter src/main.cpp src/chat.cpp src/central.cpp)
 target_link_libraries(xpchatter PRIVATE xpchatlib)
 target_link_options(xpchatter PRIVATE -lwsock32 -lws2_32)
-
+# target_link_libraries(xpchatter PRIVATE -Wl,-Bstatic -lwinpthread -Wl,-Bdynamic)
 set_property(TARGET xpchatter PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)
 

@@ -1,21 +1,28 @@
-// #pragma once
+#pragma once
+#include <xpchat/server.h>
+#include <queue>
 
-// class Chat
-// {
-// private:
-//     Chat() {}
-//     ~Chat() {}
+class Chat
+{
+private:
+    Chat() {}
+    ~Chat() {}
+    int fd = -1;
+    Server server {};
+    
 
-// public:
-//     static Chat &getInstance()
-//     {
-//         static Chat instance;
+public:
+    static Chat &getInstance()
+    {
+        static Chat instance;
 
-//         return instance;
-//     }
+        return instance;
+    }
 
-//     Chat &operator=(const Scanner &) = delete;
-//     Chat(const Scanner &) = delete;
+    Chat &operator=(const Chat &) = delete;
+    Chat(const Chat &) = delete;
+    bool disconnect();
 
-//     void scan();
-// };
+    bool connect(const Server server);
+    const Server* getActiveServer();
+};
