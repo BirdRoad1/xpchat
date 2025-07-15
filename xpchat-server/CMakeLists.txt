@@ -13,7 +13,7 @@ set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--gc-sections")
 add_subdirectory(../xpchat-lib ${CMAKE_BINARY_DIR}/bin/xpchat-lib)
 
 # target_link_libraries(xpchatterserver PRIVATE xpchatlib)
-add_executable(xpchatterserver src/main.cpp src/server_list.cpp)
+add_executable(xpchatterserver src/main.cpp src/central.cpp src/server.cpp)
 target_link_libraries(xpchatterserver PRIVATE xpchatlib)
 # set_property(TARGET xpchatterserver PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)
 
