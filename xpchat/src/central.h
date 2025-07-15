@@ -1,3 +1,6 @@
+#include <vector>
+#include <xpchat/server.h>
+
 class Central
 {
 private:
@@ -16,5 +19,7 @@ public:
     Central(const Central &) = delete;
 
     bool connect();
-    void listServers();
+    bool listServers(std::vector<Server>& servers);
+    bool sendServerJoin(int id);
+
 };

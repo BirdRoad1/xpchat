@@ -1,8 +1,9 @@
 #include "central.h"
-#include "chat_protocol.h"
+#include <xpchat/chat_protocol.h>
 #include <limits>
 #include <stdexcept>
 #include <iostream>
+#include <vector>
 
 int Central::fd = -1;
 
@@ -46,37 +47,61 @@ bool Central::connect()
     return true;
 }
 
-void Central::listServers()
+bool Central::listServers(std::vector<Server> &servers)
 {
     if (fd < 0)
     {
-        return;
+        return false;
     }
+
+    std::vector<Server> srv;
 
     if (!ChatProtocol::writeString(fd, "LSRV"))
     {
-        std::cout << "Failed to list servers" << std::endl;
-        return;
+        return false;
     }
-
-    std::cout << "TIME TO LIST " << std::endl;
 
     std::string cmd;
 
     do
     {
-        ChatProtocol::readString(fd, cmd);
-        std::cout << "CMD:" << cmd << std::endl;
+        if (!ChatProtocol::readString(fd, cmd))
+        {
+            return false;
+        }
+        
+        std::cout << "Reading str: " << cmd << std::endl;
 
         if (cmd == "SSRV") // start server
         {
+            std::cout << "Found SSRV"<<std::endl;
             Server server;
-            ChatProtocol::readServer(fd, server);
-            std::cout << "GET SERVER:" << std::endl;
-            std::cout << "IP:" << server.ip << std::endl;
-            std::cout << "ID:" << server.identifier << std::endl;
-            std::cout << "TS:" << server.connectedTimestamp << std::endl;
-            std::cout << "END SERVER:" << std::endl;
+            if (!ChatProtocol::readServer(fd, server))
+            {
+                std::cout << "Failed to read server" << std::endl;
+                return false;
+            }
+
+            std::cout << "Push server" << std::endl;
+            srv.push_back(server);
         }
     } while (cmd != "NSRV"); // end servers
+    servers = srv;
+    return true;
+}
+
+bool Central::sendServerJoin(int id)
+{
+    if (fd < 0)
+        return false;
+
+    std::vector<Server> srv;
+
+    if (!ChatProtocol::writeString(fd, "EJSRV")) // event join server
+        return false;
+
+    if (!ChatProtocol::writeInt(fd, id))
+        return false;
+
+    return true;
 }

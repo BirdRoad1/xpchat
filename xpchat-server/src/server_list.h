@@ -1,7 +1,7 @@
 #pragma once
 
 #include <vector>
-#include "server.h"
+#include <xpchat/server.h>
 #include <unordered_map>
 #include <mutex>
 class ServerList
