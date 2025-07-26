@@ -8,9 +8,16 @@
 #include <arpa/inet.h>
 #include <thread>
 
+inline void closeClientConnection(int fd)
+{
+    auto &clientList = ClientList::getInstance();
+    clientList.removePeer(fd);
+    close(fd);
+}
+
 inline void handleClientConnection(std::string ip, int fd)
 {
-    auto &serverList = ClientList::getInstance();
+    auto &clientList = ClientList::getInstance();
     std::cout << "Received connection from " << ip << std::endl;
 
     // Let it identify itself first
@@ -18,7 +25,7 @@ inline void handleClientConnection(std::string ip, int fd)
     if (!ChatProtocol::readString(fd, identity))
     {
         std::cout << "Client did not identify! Closing connection" << std::endl;
-        close(fd);
+        closeClientConnection(fd);
         return;
     }
 
@@ -26,7 +33,7 @@ inline void handleClientConnection(std::string ip, int fd)
     if (!identity.starts_with("xpchatter"))
     {
         std::cout << "Client " << identity << " is not xpchatter! Closing connection" << std::endl;
-        close(fd);
+        closeClientConnection(fd);
         return;
     }
 
@@ -38,12 +45,11 @@ inline void handleClientConnection(std::string ip, int fd)
         try
         {
             std::string cmd;
+            std::cout << "Now we should get a msg soon!" << std::endl;
             if (!ChatProtocol::readString(fd, cmd))
             {
                 std::cout << "Failed to read command! Closing connection" << std::endl;
-                serverList.removePeer(fd);
-                close(fd);
-                return;
+                break;
             }
 
             std::cout << "Got command: " << cmd << cmd.length() << std::endl;
@@ -51,35 +57,89 @@ inline void handleClientConnection(std::string ip, int fd)
             if (cmd == "DISC")
             {
                 std::cout << "Client disconnected: " << ip << std::endl;
-                serverList.removePeer(fd);
-                close(fd);
-                return;
+                break;
             }
             else if (cmd == "RUSR")
             { // register user
                 if (registered)
-                    continue;
+                {
+                    std::cout << "Already registered" << std::endl;
+                    ChatProtocol::writeString(fd, "RUSR");
+                    ChatProtocol::writeInt(fd, 0);
+                    ChatProtocol::writeString(fd, "You are already registered!");
+                }
+
                 if (!ChatProtocol::readString(fd, username))
                 {
                     std::cout << "No username received" << std::endl;
                     continue;
                 }
 
-                serverList.addPeer({{fd, ip, identity, time(NULL)}, username});
+                bool duplicate = false;
+                for (auto &peer : clientList.getPeers())
+                {
+                    if (peer->username == username)
+                    {
+                        duplicate = true;
+                    }
+                }
+
+                if (duplicate)
+                {
+                    std::cout << "DUPE" << std::endl;
+                    ChatProtocol::writeString(fd, "RUSR");
+                    ChatProtocol::writeInt(fd, 0);
+                    ChatProtocol::writeString(fd, "The username is already in use");
+                    ChatProtocol::flush(fd);
+                    continue;
+                }
+                else
+                {
+                    ChatProtocol::writeString(fd, "RUSR");
+                    ChatProtocol::writeInt(fd, 1);
+                    ChatProtocol::flush(fd);
+                }
+
+                clientList.addPeer({{fd, ip, identity, time(NULL)}, username});
                 registered = true;
 
                 ChatProtocol::writeString(fd, "MSG");
                 ChatProtocol::writeString(fd, "Welcome to this server! I hope you enjoy your stay :)");
                 ChatProtocol::flush(fd);
             }
+            else if (cmd == "MSG")
+            {
+                if (!registered)
+                    continue;
+                std::string msg;
+                if (!ChatProtocol::readString(fd, msg))
+                {
+                    std::cout << "Failed to get msg" << std::endl;
+                    continue;
+                }
+
+                std::cout << "[" << username << "] " << msg << std::endl;
+                auto clients = clientList.getPeers();
+                for (auto &client : clients)
+                {
+                    ChatProtocol::writeString(client->socket, "MSG");
+                    ChatProtocol::writeString(client->socket, username + ": " + msg);
+                    if (!ChatProtocol::flush(client->socket))
+                    {
+                        std::cout << "Client disconnected: " << client->username << std::endl;
+                        break;
+                    }
+                }
+            }
         }
         catch (std::exception &ex)
         {
             std::cout << "Caught exception in handle client thread" << ex.what() << std::endl;
-            close(fd);
-            serverList.removePeer(fd);
+            break;
         }
     }
+
+    closeClientConnection(fd);
 }
 
 // Connect to central server

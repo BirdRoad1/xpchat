@@ -14,6 +14,8 @@
 
 #define IDC_SCANBTN 1
 #define IDC_SERVER_LIST 2
+#define WM_SHOW_CHAT (WM_USER + 1)
+
 HWND window;
 HWND connectBtn;
 HWND statusText;
@@ -22,48 +24,91 @@ HWND serverListWindow;
 HWND chatBox;
 HWND inputBox;
 std::vector<Server> servers;
+std::string chatBoxText;
 
 void AddMenus(HWND hwnd)
 {
     connectBtn = CreateWindowExW(WS_EX_CLIENTEDGE, L"BUTTON", L"Connect to central server", WS_TABSTOP | WS_VISIBLE | WS_CHILD | BS_DEFPUSHBUTTON, 0, 0, 200, 50, hwnd, (HMENU)IDC_SCANBTN, GetModuleHandleW(NULL), NULL);
 }
 
-void SocketThread()
-{
-    while (true) {
-        
-    }
-    std::cout << "SOCKET THREAD" << std::endl;
-}
-
 void ShowChat()
 {
-    const Server *activeServer = Chat::getInstance().getActiveServer();
-    if (activeServer == nullptr)
+    PostMessage(window, WM_SHOW_CHAT, 0, 0);
+}
+
+void SocketThread()
+{
+    std::cout << "Start listening for msgs" << std::endl;
+    int fd;
+    while ((fd = Chat::getInstance().getSocket()) >= 0)
+    {
+        std::string cmd;
+        if (!ChatProtocol::readString(fd, cmd))
+        {
+            std::cout << "Failed to read cmd" << std::endl;
+            return;
+        }
+
+        std::cout << "RECEIVED CMD" << cmd << std::endl;
+
+        if (cmd == "MSG")
+        {
+            std::string msg;
+            if (!ChatProtocol::readString(fd, msg))
+            {
+                std::cout << "Failed to read message" << std::endl;
+                return;
+            }
+
+            chatBoxText += msg + "\n";
+            SetWindowTextW(chatBox, std::wstring(chatBoxText.begin(), chatBoxText.end()).c_str());
+        }
+        else if (cmd == "RUSR")
+        {
+            int result;
+            if (!ChatProtocol::readInt(fd, result))
+            {
+                std::cout << "Failed to read register result" << std::endl;
+                continue;
+            }
+
+            std::cout << "RUSR RESULT: " << result << std::endl;
+
+            if (result == 0)
+            {
+                std::string reason;
+                if (!ChatProtocol::readString(fd, reason))
+                {
+                    reason = "Unknown reason";
+                }
+
+                Chat::getInstance().disconnect();
+                MessageBoxW(window, std::wstring(reason.begin(), reason.end()).c_str(), L"Registration failed", MB_OK);
+            }
+            else
+            {
+                ShowChat();
+                MessageBoxW(window, L"You are now registered with the server", L"Logged in", MB_OK);
+            }
+        }
+    }
+    std::cout << "SOCKET THREAD ENDED" << std::endl;
+}
+
+void SendMessageString(std::string msg)
+{
+    int fd = Chat::getInstance().getSocket();
+    if (fd == -1)
+    {
+        std::cout << "No server to send message to" << std::endl;
         return;
-
-    std::wstring status = std::wstring(L"Status: Connected to ") + std::wstring(activeServer->ip.begin(), activeServer->ip.end());
-    if (statusText != NULL)
-    {
-        SetWindowTextW(statusText, status.c_str());
     }
 
-    if (availableServersLabel != NULL)
-    {
-        DestroyWindow(availableServersLabel);
-        availableServersLabel = NULL;
-    }
-
-    if (serverListWindow != NULL)
-    {
-        DestroyWindow(serverListWindow);
-        serverListWindow = 0;
-    }
-
-    chatBox = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"", WS_CHILD | WS_VISIBLE | ES_READONLY, 0, 25, 500, 415, window, NULL, GetModuleHandleW(NULL), 0);
-    inputBox = CreateWindowExW(WS_EX_CLIENTEDGE, L"RICHEDIT50W", L"", WS_CHILD | WS_VISIBLE, 0, 440, 500, 25, window, NULL, GetModuleHandleW(NULL), 0);
-
-    std::thread(SocketThread).detach();
+    std::cout << "SEND MSG:" << msg << std::endl;
+    ChatProtocol::writeString(fd, "MSG");
+    ChatProtocol::writeString(fd, msg);
+    ChatProtocol::flush(fd);
+    std::cout << "POST SEND MSG:" << msg << std::endl;
 }
 
 void ConnectChatServer()
@@ -88,13 +133,13 @@ void ConnectChatServer()
         {
             if (!central.listServers(servers))
             {
-                MessageBoxW(window, L"Error", L"Failed to list servers", MB_OK);
+                MessageBoxW(window, L"Failed to list servers", L"Error", MB_OK);
                 return;
             }
         }
         catch (std::runtime_error &err)
         {
-            MessageBoxW(window, L"Error", L"Failed to list servers", MB_OK);
+            MessageBoxW(window, L"Failed to list servers", L"Error", MB_OK);
             std::cout << "List servers exception: " << err.what() << std::endl;
             return;
         }
@@ -151,6 +196,10 @@ void ConnectChatServer()
             ListView_SetItem(serverListWindow, &subItem2);
         }
     }
+    else
+    {
+        MessageBoxW(window, L"An error occurred while connecting to the central server", L"Error", MB_OK);
+    }
 }
 
 LRESULT WndProc(
@@ -192,18 +241,67 @@ LRESULT WndProc(
             if (row >= 0)
             {
                 const Server &server = servers[row];
-                std::cout << "Double clicked row:" << server.ip << std::endl;
+                std::cout << "pre-connect" << std::endl;
                 if (Chat::getInstance().connect(server))
                 {
+                    std::cout << "try start thread!" << std::endl;
+                    std::thread(SocketThread).detach();
                     Central::getInstance().sendServerJoin(server.socket);
-                    ShowChat();
                 }
                 else
                 {
-                    MessageBoxW(window, L"Connection failed", L"Failed to connect to server", MB_OK);
+                    std::cout << "Connect failed?" << std::endl;
+                    MessageBoxW(window, L"Failed to connect to server", L"Connection failed", MB_OK);
                 }
             }
         }
+        else if (nmhdr->hwndFrom == inputBox)
+        {
+            std::cout << "txt changed" << std::endl;
+            if (nmhdr->code == EN_MSGFILTER)
+            {
+                MSGFILTER *pMsgFilter = (MSGFILTER *)lParam;
+                if (pMsgFilter->msg == WM_KEYDOWN && pMsgFilter->wParam == VK_RETURN)
+                {
+                    wchar_t in[1000];
+                    GetWindowTextW(inputBox, in, 1000);
+                    std::wstring wStr(in);
+                    std::string str(wStr.begin(), wStr.end());
+                    SendMessageString(str);
+
+                    std::cout << "PRESSED ENTER" << std::endl;
+                    SetWindowTextW(inputBox, L"");
+                }
+            }
+        }
+    }
+    else if (msg == WM_SHOW_CHAT)
+    {
+        const Server *activeServer = Chat::getInstance().getActiveServer();
+        if (activeServer == nullptr)
+            return DefWindowProcW(hwnd, msg, wParam, lParam);
+
+        std::wstring status = std::wstring(L"Status: Connected to ") + std::wstring(activeServer->ip.begin(), activeServer->ip.end());
+        if (statusText != NULL)
+        {
+            SetWindowTextW(statusText, status.c_str());
+        }
+
+        if (availableServersLabel != NULL)
+        {
+            DestroyWindow(availableServersLabel);
+            availableServersLabel = NULL;
+        }
+
+        if (serverListWindow != NULL)
+        {
+            DestroyWindow(serverListWindow);
+            serverListWindow = 0;
+        }
+
+        chatBox = CreateWindowExW(WS_EX_CLIENTEDGE, L"RICHEDIT50W", L"", WS_CHILD | WS_VISIBLE | ES_READONLY | ES_MULTILINE, 0, 25, 500, 415, window, NULL, GetModuleHandleW(NULL), 0);
+        inputBox = CreateWindowExW(WS_EX_CLIENTEDGE, L"RICHEDIT50W", L"", WS_CHILD | WS_VISIBLE, 0, 440, 500, 25, window, NULL, GetModuleHandleW(NULL), 0);
+        SendMessage(inputBox, EM_SETEVENTMASK, 0, ENM_KEYEVENTS);
     }
 
     return DefWindowProcW(hwnd, msg, wParam, lParam);

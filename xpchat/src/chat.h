@@ -25,4 +25,5 @@ public:
 
     bool connect(const Server server);
     const Server* getActiveServer();
+    int getSocket();
 };

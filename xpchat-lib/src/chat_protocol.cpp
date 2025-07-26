@@ -15,27 +15,24 @@
 #include <unordered_map>
 
 std::unordered_map<int, std::queue<Chunk>> ChatProtocol::sendQueueMap;
-std::unordered_map<socket_t, std::recursive_mutex> ChatProtocol::sendQueueMutexes;
+std::unordered_map<socket_t, std::mutex> ChatProtocol::sendQueueMutexes;
 
 std::queue<Chunk> &ChatProtocol::getSendQueue(int fd)
 {
     return ChatProtocol::sendQueueMap.try_emplace(fd).first->second;
 }
 
-std::recursive_mutex &ChatProtocol::getMutex(int fd)
+std::mutex &ChatProtocol::getMutex(int fd)
 {
     return ChatProtocol::sendQueueMutexes.try_emplace(fd).first->second;
 }
 
-bool ChatProtocol::enqueueBytes(int fd, const void *ptr, size_t size)
+bool ChatProtocol::enqueueBytesUnlocked(int fd, const void *ptr, size_t size)
 {
-    std::lock_guard lock(getMutex(fd));
-
     try
     {
         std::unique_ptr<char[]> buffer = std::make_unique<char[]>(size);
 
-        std::cout << "size:" << size << std::endl;
         std::memcpy(buffer.get(), ptr, size);
         auto &queue = getSendQueue(fd);
         queue.push(Chunk{std::move(buffer), size});
@@ -47,9 +44,15 @@ bool ChatProtocol::enqueueBytes(int fd, const void *ptr, size_t size)
     }
 }
 
-std::unique_ptr<Chunk> ChatProtocol::dequeueChunk(int fd)
+bool ChatProtocol::enqueueBytes(int fd, const void *ptr, size_t size)
 {
     std::lock_guard lock(getMutex(fd));
+
+    return enqueueBytesUnlocked(fd, ptr, size);
+}
+
+std::unique_ptr<Chunk> ChatProtocol::dequeueChunk(int fd)
+{
     auto &queue = getSendQueue(fd);
 
     if (queue.empty())
@@ -60,15 +63,19 @@ std::unique_ptr<Chunk> ChatProtocol::dequeueChunk(int fd)
     return up;
 }
 
+bool ChatProtocol::writeIntUnlocked(socket_t fd, const int data)
+{
+    return ChatProtocol::enqueueBytesUnlocked(fd, &data, sizeof(data));
+}
+
 bool ChatProtocol::writeInt(socket_t fd, const int data)
 {
-    return ChatProtocol::enqueueBytes(fd, &data, sizeof(data));
+    std::lock_guard lock(getMutex(fd));
+    return ChatProtocol::enqueueBytesUnlocked(fd, &data, sizeof(data));
 }
 
 bool ChatProtocol::readInt(socket_t fd, int &data)
 {
-    std::lock_guard lock(getMutex(fd));
-
     int out;
     if (recv(fd, reinterpret_cast<char *>(&out), sizeof(out), 0) < sizeof(out))
         return false;
@@ -77,51 +84,48 @@ bool ChatProtocol::readInt(socket_t fd, int &data)
     return true;
 }
 
-bool ChatProtocol::writeString(socket_t fd, const std::string &str)
+bool ChatProtocol::writeStringUnlocked(socket_t fd, const std::string &str)
 {
-    std::lock_guard lock(getMutex(fd));
-    std::cout << "write string" << std::endl;
-    std::cout << "after mutex" << std::endl;
-
     size_t ipLen = str.length();
-    if (!ChatProtocol::enqueueBytes(fd, &ipLen, sizeof(ipLen)))
+    if (!ChatProtocol::enqueueBytesUnlocked(fd, &ipLen, sizeof(ipLen)))
     {
         std::cout << "Failed to enqueue bytes for len" << std::endl;
         return false;
     }
 
-    std::cout << "After first enqueu" << std::endl;
-
     if (ipLen > 0)
     {
-        std::cout << "string empty" << std::endl;
-        if (!ChatProtocol::enqueueBytes(fd, &str[0], ipLen))
+        if (!ChatProtocol::enqueueBytesUnlocked(fd, &str[0], ipLen))
         {
-            std::cout << "Failed to enqueue bytes for str" << std::endl;
             return false;
         }
-        std::cout << "After 2nd enqueu" << std::endl;
     }
 
-    std::cout << "Finished writing" << std::endl;
     return true;
+}
+
+bool ChatProtocol::writeString(socket_t fd, const std::string &str)
+{
+    std::lock_guard lock(getMutex(fd));
+
+    return writeStringUnlocked(fd, str);
 }
 
 bool ChatProtocol::writeServer(socket_t fd, const Server &server)
 {
     std::lock_guard lock(getMutex(fd));
-    if (!writeInt(fd, server.socket))
+    if (!writeIntUnlocked(fd, server.socket))
         return false;
     // Send IP
-    if (!writeString(fd, server.ip))
+    if (!writeStringUnlocked(fd, server.ip))
         return false;
 
     // Send ID
-    if (!writeString(fd, server.identifier))
+    if (!writeStringUnlocked(fd, server.identifier))
         return false;
 
     // Send timestamp
-    if (!enqueueBytes(fd, &server.connectedTimestamp, sizeof(server.connectedTimestamp)))
+    if (!enqueueBytesUnlocked(fd, &server.connectedTimestamp, sizeof(server.connectedTimestamp)))
         return false;
 
     return true;
@@ -129,9 +133,7 @@ bool ChatProtocol::writeServer(socket_t fd, const Server &server)
 
 bool ChatProtocol::readString(socket_t fd, std::string &str)
 {
-    std::lock_guard lock(getMutex(fd));
-
-    size_t len = 0;
+    ssize_t len = 0;
     if (recv(fd, reinterpret_cast<char *>(&len), sizeof(len), MSG_WAITALL) < sizeof(len))
         return false;
 
@@ -181,22 +183,22 @@ bool ChatProtocol::writeClient(socket_t fd, const Client &client)
 {
     std::lock_guard lock(getMutex(fd));
 
-    if (!writeInt(fd, client.socket))
+    if (!writeIntUnlocked(fd, client.socket))
         return false;
     // Send IP
-    if (!writeString(fd, client.ip))
+    if (!writeStringUnlocked(fd, client.ip))
         return false;
 
     // Send ID
-    if (!writeString(fd, client.identifier))
+    if (!writeStringUnlocked(fd, client.identifier))
         return false;
 
     // Send username
-    if (!writeString(fd, client.username))
+    if (!writeStringUnlocked(fd, client.username))
         return false;
 
     // Send timestamp
-    if (!enqueueBytes(fd, &client.connectedTimestamp, sizeof(client.connectedTimestamp)))
+    if (!enqueueBytesUnlocked(fd, &client.connectedTimestamp, sizeof(client.connectedTimestamp)))
         return false;
 
     return true;
@@ -240,8 +242,7 @@ bool ChatProtocol::flush(socket_t fd)
 {
     std::lock_guard lock(getMutex(fd));
     auto &queue = ChatProtocol::getSendQueue(fd);
-    
-    std::cout << "Trying to flush " << queue.size() << " chunks to " << fd << "!" << std::endl;
+
     while (!queue.empty())
     {
         auto chunkPtr = ChatProtocol::dequeueChunk(fd);
@@ -257,8 +258,6 @@ bool ChatProtocol::flush(socket_t fd)
             std::cout << "Failed to send " << chunkPtr->length << " bytes!" << std::endl;
             return false;
         }
-
-        std::cout << "Sent " << chunkPtr->length << " bytes!" << std::endl;
     }
 
     return true;

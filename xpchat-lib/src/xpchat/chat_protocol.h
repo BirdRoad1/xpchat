@@ -24,13 +24,17 @@ struct Chunk
 class ChatProtocol
 {
 private:
-    static std::unordered_map<socket_t, std::recursive_mutex> sendQueueMutexes;
+    static std::unordered_map<socket_t, std::mutex> sendQueueMutexes;
     static std::unordered_map<int, std::queue<Chunk>> sendQueueMap;
 
-    static std::recursive_mutex &getMutex(int fd);
+    static std::mutex &getMutex(int fd);
     static std::queue<Chunk> &getSendQueue(int fd);
     static bool enqueueBytes(int fd, const void *ptr, size_t size);
     static std::unique_ptr<Chunk> dequeueChunk(int fd);
+
+    static bool enqueueBytesUnlocked(int fd, const void *ptr, size_t size);
+    static bool writeIntUnlocked(socket_t fd, const int data);
+    static bool writeStringUnlocked(socket_t fd, const std::string &str);
 
 public:
     static bool writeInt(socket_t fd, const int data);

@@ -61,6 +61,10 @@ bool Chat::connect(const Server server)
     return true;
 }
 
+int Chat::getSocket() {
+    return fd;
+}
+
 const Server* Chat::getActiveServer() {
     if (fd == -1) return nullptr;
 

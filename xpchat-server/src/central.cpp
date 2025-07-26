@@ -9,6 +9,12 @@
 #include <arpa/inet.h>
 #include <thread>
 
+inline void closeServerConnection(int fd) {
+    auto& serverList = ServerList::getInstance();
+    serverList.removePeer(fd);
+    close(fd);
+}
+
 inline void handleServerConnection(std::string ip, int fd)
 {
     auto &serverList = ServerList::getInstance();
@@ -19,7 +25,7 @@ inline void handleServerConnection(std::string ip, int fd)
     if (!ChatProtocol::readString(fd, identity))
     {
         std::cout << "Client did not identify! Closing connection" << std::endl;
-        close(fd);
+        closeServerConnection(fd);
         return;
     }
 
@@ -37,7 +43,7 @@ inline void handleServerConnection(std::string ip, int fd)
             {
                 std::cout << "Failed to read command! Closing connection" << std::endl;
                 serverList.removePeer(fd);
-                close(fd);
+                closeServerConnection(fd);
                 return;
             }
 
@@ -97,7 +103,7 @@ inline void handleServerConnection(std::string ip, int fd)
         catch (std::exception &ex)
         {
             std::cout << "Caught exception in handle client thread" << ex.what() << std::endl;
-            close(fd);
+            closeServerConnection(fd);
             serverList.removePeer(fd);
         }
     }
