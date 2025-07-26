@@ -9,8 +9,20 @@
 #include <arpa/inet.h>
 #include <thread>
 
-inline void closeServerConnection(int fd) {
-    auto& serverList = ServerList::getInstance();
+inline void closeServerConnection(int fd, std::string ip)
+{
+    auto &serverList = ServerList::getInstance();
+    Server server;
+
+    if (serverList.getPeerById(fd, server))
+    {
+        std::cout << "Client disconnected: " << ip << ", software: " << server.identifier << std::endl;
+    }
+    else
+    {
+        std::cout << "Unknown client disconnected: " << ip << std::endl;
+    }
+
     serverList.removePeer(fd);
     close(fd);
 }
@@ -25,7 +37,7 @@ inline void handleServerConnection(std::string ip, int fd)
     if (!ChatProtocol::readString(fd, identity))
     {
         std::cout << "Client did not identify! Closing connection" << std::endl;
-        closeServerConnection(fd);
+        closeServerConnection(fd, ip);
         return;
     }
 
@@ -41,10 +53,7 @@ inline void handleServerConnection(std::string ip, int fd)
             std::string cmd;
             if (!ChatProtocol::readString(fd, cmd))
             {
-                std::cout << "Failed to read command! Closing connection" << std::endl;
-                serverList.removePeer(fd);
-                closeServerConnection(fd);
-                return;
+                break;
             }
 
             std::cout << "Got command: " << cmd << cmd.length() << std::endl;
@@ -55,7 +64,7 @@ inline void handleServerConnection(std::string ip, int fd)
                 if (now - lastRegistrationTime <= 30)
                 {
                     // too soon
-                    std::cout << "Warning: client " << ip << " tried registering too quickly! (" << now - lastRegistrationTime << " seconds)" << std::endl;
+                    std::cout << "Warning: client " << ip << " tried re-registering too quickly! (" << now - lastRegistrationTime << " seconds)" << std::endl;
                 }
                 else
                 {
@@ -68,13 +77,10 @@ inline void handleServerConnection(std::string ip, int fd)
             {
                 // List servers
                 std::vector<const Server *> servers = serverList.getPeers();
-                // size_t serversCount = servers.size();
-                std::cout << "SENDING LSRV" << std::endl;
                 ChatProtocol::writeString(fd, "LSRV");
                 ChatProtocol::flush(fd);
                 for (auto *server : servers)
                 {
-                    std::cout << "SENDING SERVER" << std::endl;
                     ChatProtocol::writeString(fd, "SSRV");
                     ChatProtocol::writeServer(fd, *server);
                     ChatProtocol::flush(fd);
@@ -97,16 +103,17 @@ inline void handleServerConnection(std::string ip, int fd)
             }
             else
             {
-                std::cout << "NO match" << std::endl;
+                std::cout << "Unknown message: " << cmd << std::endl;
             }
         }
         catch (std::exception &ex)
         {
             std::cout << "Caught exception in handle client thread" << ex.what() << std::endl;
-            closeServerConnection(fd);
-            serverList.removePeer(fd);
+            break;
         }
     }
+
+    closeServerConnection(fd, ip);
 }
 
 int mainCentral()

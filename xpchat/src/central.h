@@ -19,6 +19,8 @@ public:
     Central(const Central &) = delete;
 
     bool connect();
+    bool disconnect();
+    bool isConnected();
     bool listServers(std::vector<Server>& servers);
     bool sendServerJoin(int id);
 

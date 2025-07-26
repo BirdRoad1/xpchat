@@ -15,6 +15,9 @@
 #define IDC_SCANBTN 1
 #define IDC_SERVER_LIST 2
 #define WM_SHOW_CHAT (WM_USER + 1)
+#define WM_END_CHAT (WM_USER + 2)
+#define WM_SET_TEXT (WM_USER + 3)
+#define WM_UPDATE_SERVER_LIST (WM_USER + 4)
 
 HWND window;
 HWND connectBtn;
@@ -26,7 +29,25 @@ HWND inputBox;
 HWND usernameLabel;
 HWND usernameInputBox;
 std::vector<Server> servers;
-std::string chatBoxText;
+std::wstring chatBoxText;
+
+void UTF8To16(const std::string &in, std::wstring &out)
+{
+    int wcharLen = MultiByteToWideChar(CP_UTF8, 0, in.c_str(), -1, NULL, 0);
+    wchar_t *wstr = new wchar_t[wcharLen];
+    MultiByteToWideChar(CP_UTF8, 0, in.c_str(), -1, wstr, wcharLen);
+    out = std::wstring(wstr);
+    delete[] wstr;
+}
+
+void UTF16To8(const std::wstring &in, std::string &out)
+{
+    int wcharLen = WideCharToMultiByte(CP_UTF8, 0, in.c_str(), -1, NULL, 0, 0, 0);
+    char *str = new char[wcharLen];
+    WideCharToMultiByte(CP_UTF8, 0, in.c_str(), -1, str, wcharLen, 0, 0);
+    out = std::string(str);
+    delete[] str;
+}
 
 void AddMenus(HWND hwnd)
 {
@@ -36,6 +57,11 @@ void AddMenus(HWND hwnd)
 void ShowChat()
 {
     PostMessage(window, WM_SHOW_CHAT, 0, 0);
+}
+
+void SetChatBoxText(const wchar_t *text)
+{
+    PostMessage(window, WM_SET_TEXT, 0, (LPARAM)text);
 }
 
 void SocketThread()
@@ -48,6 +74,7 @@ void SocketThread()
         if (!ChatProtocol::readString(fd, cmd))
         {
             std::cout << "Failed to read cmd" << std::endl;
+            PostMessage(window, WM_END_CHAT, 0, 0);
             return;
         }
 
@@ -62,8 +89,16 @@ void SocketThread()
                 return;
             }
 
-            chatBoxText += msg + "\n";
-            SetWindowTextW(chatBox, std::wstring(chatBoxText.begin(), chatBoxText.end()).c_str());
+            std::wstring msgW;
+            UTF8To16(msg, msgW);
+            chatBoxText += msgW + L"\n";
+
+            wchar_t *buffer = new wchar_t[chatBoxText.length() + 1];
+            wcscpy(buffer, chatBoxText.c_str());
+
+            PostMessage(window, WM_SET_TEXT, 0, (LPARAM)buffer);
+
+            // SetWindowTextW(chatBox, std::wstring(chatBoxText.begin(), chatBoxText.end()).c_str());
         }
         else if (cmd == "RUSR")
         {
@@ -85,7 +120,9 @@ void SocketThread()
                 }
 
                 Chat::getInstance().disconnect();
-                MessageBoxW(window, std::wstring(reason.begin(), reason.end()).c_str(), L"Registration failed", MB_OK);
+                std::wstring wReason;
+                UTF8To16(reason, wReason);
+                MessageBoxW(window, wReason.c_str(), L"Registration failed", MB_OK);
             }
             else
             {
@@ -113,64 +150,51 @@ void SendMessageString(std::string msg)
     std::cout << "POST SEND MSG:" << msg << std::endl;
 }
 
-void ConnectChatServer()
+bool UpdateServerList()
 {
-    // Now start scanning
-    std::cout << "Connect to chat server was clicked!" << std::endl;
+    std::cout << "pre update" << std::endl;
     Central &central = Central::getInstance();
-    bool result = central.connect();
-    std::cout << "Post connect" << std::endl;
-    if (result)
+    if (!central.isConnected())
     {
-        if (connectBtn)
-        {
-            DestroyWindow(connectBtn);
-        }
+        return false;
+    }
 
-        statusText = CreateWindowExW(WS_EX_CLIENTEDGE, L"Static", L"Status: Connected to central", WS_CHILD | WS_VISIBLE, 0, 0, 500, 25, window, NULL, GetModuleHandleW(NULL), 0);
-        availableServersLabel = CreateWindowExW(WS_EX_CLIENTEDGE, L"Static", L"Available chat servers:", WS_CHILD | WS_VISIBLE, 0, 25, 180, 25, window, NULL, GetModuleHandleW(NULL), 0);
-
-        usernameLabel = CreateWindowExW(WS_EX_CLIENTEDGE, L"Static", L"Username", WS_CHILD | WS_VISIBLE, 0, 435, 80, 25, window, NULL, GetModuleHandleW(NULL), 0);
-        usernameInputBox = CreateWindowExW(WS_EX_CLIENTEDGE, L"RICHEDIT50W", L"", WS_CHILD | WS_VISIBLE, 80, 435, 370, 25, window, NULL, GetModuleHandleW(NULL), 0);
-        SendMessageW(usernameInputBox, EM_SETLIMITTEXT, 32, 0);
-
-        // List servers
-        try
-        {
-            if (!central.listServers(servers))
-            {
-                MessageBoxW(window, L"Failed to list servers", L"Error", MB_OK);
-                return;
-            }
-        }
-        catch (std::runtime_error &err)
+    try
+    {
+        if (!central.listServers(servers))
         {
             MessageBoxW(window, L"Failed to list servers", L"Error", MB_OK);
-            std::cout << "List servers exception: " << err.what() << std::endl;
-            return;
+            return false;
         }
 
-        std::cout << "Create window!" << std::endl;
+        if (serverListWindow != NULL)
+        {
+            ListView_DeleteAllItems(serverListWindow);
+        }
+        else
+        {
+            serverListWindow = CreateWindowExW(WS_EX_CLIENTEDGE, L"SysListView32", L"", WS_CHILD | WS_VISIBLE | LVS_REPORT, 0, 50, 450, 380, window, (HMENU)IDC_SERVER_LIST, GetModuleHandleW(NULL), 0);
 
-        serverListWindow = CreateWindowExW(WS_EX_CLIENTEDGE, L"SysListView32", L"", WS_CHILD | WS_VISIBLE | LVS_REPORT, 0, 50, 450, 380, window, (HMENU)IDC_SERVER_LIST, GetModuleHandleW(NULL), 0);
+            std::cout << "Create window!" << std::endl;
 
-        LVCOLUMN ipCol = {0};
-        ipCol.mask = LVCF_WIDTH | LVCF_TEXT;
-        ipCol.cx = 100;              // Set column width (e.g., 400 pixels)
-        ipCol.pszText = "Server IP"; // Column header text
-        ListView_InsertColumn(serverListWindow, 0, &ipCol);
+            LVCOLUMN ipCol = {0};
+            ipCol.mask = LVCF_WIDTH | LVCF_TEXT;
+            ipCol.cx = 100;              // Set column width (e.g., 400 pixels)
+            ipCol.pszText = "Server IP"; // Column header text
+            ListView_InsertColumn(serverListWindow, 0, &ipCol);
 
-        LVCOLUMN idCol = {0};
-        idCol.mask = LVCF_WIDTH | LVCF_TEXT;
-        idCol.cx = 150;                      // Set column width (e.g., 400 pixels)
-        idCol.pszText = "Server Identifier"; // Column header text
-        ListView_InsertColumn(serverListWindow, 1, &idCol);
+            LVCOLUMN idCol = {0};
+            idCol.mask = LVCF_WIDTH | LVCF_TEXT;
+            idCol.cx = 150;                      // Set column width (e.g., 400 pixels)
+            idCol.pszText = "Server Identifier"; // Column header text
+            ListView_InsertColumn(serverListWindow, 1, &idCol);
 
-        LVCOLUMN joinDateCol = {0};
-        joinDateCol.mask = LVCF_WIDTH | LVCF_TEXT;
-        joinDateCol.cx = 150;              // Set column width (e.g., 400 pixels)
-        joinDateCol.pszText = "Join Date"; // Column header text
-        ListView_InsertColumn(serverListWindow, 2, &joinDateCol);
+            LVCOLUMN joinDateCol = {0};
+            joinDateCol.mask = LVCF_WIDTH | LVCF_TEXT;
+            joinDateCol.cx = 150;              // Set column width (e.g., 400 pixels)
+            joinDateCol.pszText = "Join Date"; // Column header text
+            ListView_InsertColumn(serverListWindow, 2, &joinDateCol);
+        }
 
         for (const Server &server : servers)
         {
@@ -201,6 +225,52 @@ void ConnectChatServer()
 
             ListView_SetItem(serverListWindow, &subItem2);
         }
+
+        std::cout << "post update" << std::endl;
+
+        return true;
+    }
+    catch (std::runtime_error &err)
+    {
+        MessageBoxW(window, L"Failed to list servers", L"Error", MB_OK);
+        std::cout << "List servers exception: " << err.what() << std::endl;
+        return false;
+    }
+}
+
+void UpdateListThread()
+{
+    Central &central = Central::getInstance();
+    while (true)
+    {
+        PostMessage(window, WM_UPDATE_SERVER_LIST, 0, 0);
+        std::this_thread::sleep_for(std::chrono::seconds(3));
+    }
+}
+
+void ConnectChatServer()
+{
+    // Now start scanning
+    std::cout << "Connect to chat server was clicked!" << std::endl;
+    Central &central = Central::getInstance();
+    bool result = central.connect();
+    std::cout << "Post connect" << std::endl;
+    if (result)
+    {
+        if (connectBtn)
+        {
+            DestroyWindow(connectBtn);
+        }
+
+        statusText = CreateWindowExW(WS_EX_CLIENTEDGE, L"Static", L"Status: Connected to central", WS_CHILD | WS_VISIBLE, 0, 0, 500, 25, window, NULL, GetModuleHandleW(NULL), 0);
+        availableServersLabel = CreateWindowExW(WS_EX_CLIENTEDGE, L"Static", L"Available chat servers:", WS_CHILD | WS_VISIBLE, 0, 25, 180, 25, window, NULL, GetModuleHandleW(NULL), 0);
+
+        usernameLabel = CreateWindowExW(WS_EX_CLIENTEDGE, L"Static", L"Username", WS_CHILD | WS_VISIBLE, 0, 435, 80, 25, window, NULL, GetModuleHandleW(NULL), 0);
+        usernameInputBox = CreateWindowExW(WS_EX_CLIENTEDGE, L"RICHEDIT50W", L"", WS_CHILD | WS_VISIBLE, 80, 435, 370, 25, window, NULL, GetModuleHandleW(NULL), 0);
+        SendMessageW(usernameInputBox, EM_SETLIMITTEXT, 32, 0);
+
+        // List servers
+        UpdateServerList();
     }
     else
     {
@@ -258,7 +328,8 @@ LRESULT WndProc(
                 }
 
                 std::wstring wStrUsername(wUsername);
-                std::string username(wStrUsername.begin(), wStrUsername.end());
+                std::string username;
+                UTF16To8(wUsername, username);
 
                 if (username.empty())
                 {
@@ -271,6 +342,7 @@ LRESULT WndProc(
                     std::cout << "try start thread!" << std::endl;
                     std::thread(SocketThread).detach();
                     Central::getInstance().sendServerJoin(server.socket);
+                    Central::getInstance().disconnect();
                 }
                 else
                 {
@@ -289,7 +361,10 @@ LRESULT WndProc(
                     wchar_t in[1000];
                     GetWindowTextW(inputBox, in, 1000);
                     std::wstring wStr(in);
-                    std::string str(wStr.begin(), wStr.end());
+
+                    std::string str;
+                    UTF16To8(wStr, str);
+
                     SendMessageString(str);
                     SetWindowTextW(inputBox, L"");
                 }
@@ -332,9 +407,47 @@ LRESULT WndProc(
             usernameInputBox = 0;
         }
 
-        chatBox = CreateWindowExW(WS_EX_CLIENTEDGE, L"RICHEDIT50W", L"", WS_CHILD | WS_VISIBLE | ES_READONLY | ES_MULTILINE, 0, 25, 500, 415, window, NULL, GetModuleHandleW(NULL), 0);
+        chatBox = CreateWindowExW(WS_EX_CLIENTEDGE, L"RICHEDIT50W", L"", WS_CHILD | WS_VISIBLE | ES_READONLY | ES_MULTILINE | WS_VSCROLL, 0, 25, 500, 415, window, NULL, GetModuleHandleW(NULL), 0);
         inputBox = CreateWindowExW(WS_EX_CLIENTEDGE, L"RICHEDIT50W", L"", WS_CHILD | WS_VISIBLE, 0, 440, 500, 25, window, NULL, GetModuleHandleW(NULL), 0);
         SendMessage(inputBox, EM_SETEVENTMASK, 0, ENM_KEYEVENTS);
+    }
+    else if (msg == WM_END_CHAT)
+    {
+        if (statusText != NULL)
+        {
+            DestroyWindow(statusText);
+            statusText = 0;
+        }
+
+        if (chatBox != NULL)
+        {
+            DestroyWindow(chatBox);
+            chatBox = 0;
+        }
+
+        if (inputBox != NULL)
+        {
+            DestroyWindow(inputBox);
+            inputBox = 0;
+        }
+
+        AddMenus(hwnd);
+    }
+    else if (msg == WM_SET_TEXT)
+    {
+        if (chatBox == NULL)
+        {
+            return 0;
+        }
+
+        wchar_t *text = (wchar_t *)lParam;
+        SetWindowTextW(chatBox, text);
+        delete[] text;
+        SendMessage(chatBox, WM_VSCROLL, SB_BOTTOM, 0L);
+    }
+    else if (msg == WM_UPDATE_SERVER_LIST)
+    {
+        UpdateServerList();
     }
 
     return DefWindowProcW(hwnd, msg, wParam, lParam);
@@ -376,6 +489,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
     }
 
     window = hwnd;
+
+    std::thread(UpdateListThread).detach();
 
     MSG msg;
     while (GetMessageW(&msg, NULL, 0, 0))

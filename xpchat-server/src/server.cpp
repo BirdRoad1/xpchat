@@ -8,9 +8,20 @@
 #include <arpa/inet.h>
 #include <thread>
 
-inline void closeClientConnection(int fd)
+inline void closeClientConnection(int fd, std::string ip)
 {
     auto &clientList = ClientList::getInstance();
+    Client client;
+
+    if (clientList.getPeerById(fd, client))
+    {
+        std::cout << "Client disconnected: " << ip << ", software: " << client.identifier << std::endl;
+    }
+    else
+    {
+        std::cout << "Unknown client disconnected: " << ip << std::endl;
+    }
+
     clientList.removePeer(fd);
     close(fd);
 }
@@ -25,7 +36,7 @@ inline void handleClientConnection(std::string ip, int fd)
     if (!ChatProtocol::readString(fd, identity))
     {
         std::cout << "Client did not identify! Closing connection" << std::endl;
-        closeClientConnection(fd);
+        closeClientConnection(fd, ip);
         return;
     }
 
@@ -33,7 +44,7 @@ inline void handleClientConnection(std::string ip, int fd)
     if (!identity.starts_with("xpchatter"))
     {
         std::cout << "Client " << identity << " is not xpchatter! Closing connection" << std::endl;
-        closeClientConnection(fd);
+        closeClientConnection(fd, ip);
         return;
     }
 
@@ -126,7 +137,6 @@ inline void handleClientConnection(std::string ip, int fd)
                     ChatProtocol::writeString(client->socket, username + ": " + msg);
                     if (!ChatProtocol::flush(client->socket))
                     {
-                        std::cout << "Client disconnected: " << client->username << std::endl;
                         break;
                     }
                 }
@@ -139,7 +149,7 @@ inline void handleClientConnection(std::string ip, int fd)
         }
     }
 
-    closeClientConnection(fd);
+    closeClientConnection(fd, ip);
 }
 
 // Connect to central server

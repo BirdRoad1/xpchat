@@ -46,6 +46,20 @@ bool Central::connect()
     return true;
 }
 
+bool Central::disconnect()
+{
+    if (fd < 0)
+        return false;
+
+    ChatProtocol::flush(fd);
+    closesocket(fd);
+    fd = -1;
+}
+
+bool Central::isConnected() {
+    return fd >= 0;
+}
+
 bool Central::listServers(std::vector<Server> &servers)
 {
     if (fd < 0)
