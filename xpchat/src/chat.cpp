@@ -19,7 +19,7 @@ bool Chat::disconnect()
     return result;
 }
 
-bool Chat::connect(const Server server)
+bool Chat::connect(const Server server, const std::string& username)
 {
     if (fd != -1)
     {
@@ -53,7 +53,7 @@ bool Chat::connect(const Server server)
     ChatProtocol::writeString(sock, "xpchatter v1.0");
     
     ChatProtocol::writeString(sock, "RUSR");
-    ChatProtocol::writeString(sock, "username");
+    ChatProtocol::writeString(sock, username);
     ChatProtocol::flush(sock);
 
     fd = sock;

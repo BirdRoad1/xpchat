@@ -23,6 +23,8 @@ HWND availableServersLabel;
 HWND serverListWindow;
 HWND chatBox;
 HWND inputBox;
+HWND usernameLabel;
+HWND usernameInputBox;
 std::vector<Server> servers;
 std::string chatBoxText;
 
@@ -127,6 +129,10 @@ void ConnectChatServer()
 
         statusText = CreateWindowExW(WS_EX_CLIENTEDGE, L"Static", L"Status: Connected to central", WS_CHILD | WS_VISIBLE, 0, 0, 500, 25, window, NULL, GetModuleHandleW(NULL), 0);
         availableServersLabel = CreateWindowExW(WS_EX_CLIENTEDGE, L"Static", L"Available chat servers:", WS_CHILD | WS_VISIBLE, 0, 25, 180, 25, window, NULL, GetModuleHandleW(NULL), 0);
+
+        usernameLabel = CreateWindowExW(WS_EX_CLIENTEDGE, L"Static", L"Username", WS_CHILD | WS_VISIBLE, 0, 435, 80, 25, window, NULL, GetModuleHandleW(NULL), 0);
+        usernameInputBox = CreateWindowExW(WS_EX_CLIENTEDGE, L"RICHEDIT50W", L"", WS_CHILD | WS_VISIBLE, 80, 435, 370, 25, window, NULL, GetModuleHandleW(NULL), 0);
+        SendMessageW(usernameInputBox, EM_SETLIMITTEXT, 32, 0);
 
         // List servers
         try
@@ -242,7 +248,25 @@ LRESULT WndProc(
             {
                 const Server &server = servers[row];
                 std::cout << "pre-connect" << std::endl;
-                if (Chat::getInstance().connect(server))
+
+                // get username
+                wchar_t wUsername[32];
+                if (GetWindowTextW(usernameInputBox, wUsername, 32) < 0)
+                {
+                    MessageBoxW(window, L"Failed to get username text", L"Error", MB_OK);
+                    return 0;
+                }
+
+                std::wstring wStrUsername(wUsername);
+                std::string username(wStrUsername.begin(), wStrUsername.end());
+
+                if (username.empty())
+                {
+                    MessageBoxW(window, L"Your username cannot be empty!", L"Error", MB_OK);
+                    return 0;
+                }
+
+                if (Chat::getInstance().connect(server, username))
                 {
                     std::cout << "try start thread!" << std::endl;
                     std::thread(SocketThread).detach();
@@ -257,7 +281,6 @@ LRESULT WndProc(
         }
         else if (nmhdr->hwndFrom == inputBox)
         {
-            std::cout << "txt changed" << std::endl;
             if (nmhdr->code == EN_MSGFILTER)
             {
                 MSGFILTER *pMsgFilter = (MSGFILTER *)lParam;
@@ -268,8 +291,6 @@ LRESULT WndProc(
                     std::wstring wStr(in);
                     std::string str(wStr.begin(), wStr.end());
                     SendMessageString(str);
-
-                    std::cout << "PRESSED ENTER" << std::endl;
                     SetWindowTextW(inputBox, L"");
                 }
             }
@@ -297,6 +318,18 @@ LRESULT WndProc(
         {
             DestroyWindow(serverListWindow);
             serverListWindow = 0;
+        }
+
+        if (usernameLabel != NULL)
+        {
+            DestroyWindow(usernameLabel);
+            usernameLabel = 0;
+        }
+
+        if (usernameInputBox != NULL)
+        {
+            DestroyWindow(usernameInputBox);
+            usernameInputBox = 0;
         }
 
         chatBox = CreateWindowExW(WS_EX_CLIENTEDGE, L"RICHEDIT50W", L"", WS_CHILD | WS_VISIBLE | ES_READONLY | ES_MULTILINE, 0, 25, 500, 415, window, NULL, GetModuleHandleW(NULL), 0);

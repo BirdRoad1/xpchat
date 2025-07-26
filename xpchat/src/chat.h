@@ -1,6 +1,7 @@
 #pragma once
 #include <xpchat/server.h>
 #include <queue>
+#include <string>
 
 class Chat
 {
@@ -23,7 +24,7 @@ public:
     Chat(const Chat &) = delete;
     bool disconnect();
 
-    bool connect(const Server server);
+    bool connect(const Server server, const std::string& username);
     const Server* getActiveServer();
     int getSocket();
 };
