@@ -1,1 +1,3 @@
-int mainServer();
+#include <string>
+
+int mainServer(std::string publicIP);

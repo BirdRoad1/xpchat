@@ -109,8 +109,6 @@ void SocketThread()
                 continue;
             }
 
-            std::cout << "RUSR RESULT: " << result << std::endl;
-
             if (result == 0)
             {
                 std::string reason;
@@ -152,7 +150,6 @@ void SendMessageString(std::string msg)
 
 bool UpdateServerList()
 {
-    std::cout << "pre update" << std::endl;
     Central &central = Central::getInstance();
     if (!central.isConnected())
     {
@@ -196,14 +193,16 @@ bool UpdateServerList()
             ListView_InsertColumn(serverListWindow, 2, &joinDateCol);
         }
 
-        for (const Server &server : servers)
+        for (int i = 0; i < servers.size(); i++)
         {
+            const Server &server = servers.at(i);
 
             LVITEM lvi = {0};
-            lvi.mask = LVIF_TEXT;
+            lvi.mask = LVIF_TEXT | LVIF_PARAM;
             lvi.iItem = 0; // Insert at the top
             std::string str(server.ip);
             lvi.pszText = &str[0];
+            lvi.lParam = i;
             ListView_InsertItem(serverListWindow, &lvi);
 
             LVITEM subItem = {0};
@@ -316,8 +315,13 @@ LRESULT WndProc(
             int col = nmitem->iSubItem;
             if (row >= 0)
             {
-                const Server &server = servers[row];
-                std::cout << "pre-connect" << std::endl;
+                LVITEM lvi = {0};
+                lvi.mask = LVIF_PARAM;
+                lvi.iItem = row;
+                lvi.iSubItem = 0;
+                ListView_GetItem(serverListWindow, &lvi);
+
+                const Server &server = servers[lvi.lParam];
 
                 // get username
                 wchar_t wUsername[32];

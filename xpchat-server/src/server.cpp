@@ -7,6 +7,9 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <thread>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netdb.h>
 
 inline void closeClientConnection(int fd, std::string ip)
 {
@@ -56,7 +59,6 @@ inline void handleClientConnection(std::string ip, int fd)
         try
         {
             std::string cmd;
-            std::cout << "Now we should get a msg soon!" << std::endl;
             if (!ChatProtocol::readString(fd, cmd))
             {
                 std::cout << "Failed to read command! Closing connection" << std::endl;
@@ -153,12 +155,36 @@ inline void handleClientConnection(std::string ip, int fd)
 }
 
 // Connect to central server
-bool connectToCentral()
+bool connectToCentral(std::string publicIP)
 {
+    addrinfo hints;
+    hints.ai_flags = AI_ADDRCONFIG;
+    hints.ai_socktype = SOCK_STREAM;
+    hints.ai_protocol = IPPROTO_TCP;
+    hints.ai_family = AF_INET;
+    addrinfo *result;
+    int addrResult = getaddrinfo("xpchatcentral.jlmsz.com", NULL, &hints, &result);
+    if (addrResult != 0)
+    {
+        std::cout << "Failed to resolve xpchatcentral.jlmsz.com! Error code: " << addrResult << std::endl;
+        return false;
+    }
+
+    if (result == NULL)
+    {
+        std::cout << "No IPs found for xpchatcentral.jlmsz.com" << std::endl;
+        return false;
+    }
+
+    sockaddr_in *resolvedAddr = (sockaddr_in *)result->ai_addr;
+    std::cout << "Resolved central IP: " << inet_ntoa(resolvedAddr->sin_addr) << std::endl;
+
     sockaddr_in addr;
     addr.sin_family = AF_INET;
-    addr.sin_addr.s_addr = inet_addr("192.168.100.1");
+    addr.sin_addr.s_addr = resolvedAddr->sin_addr.s_addr;
     addr.sin_port = htons(28492);
+
+    freeaddrinfo(result);
 
     // create socket
     int sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
@@ -177,19 +203,20 @@ bool connectToCentral()
 
     std::string identity("xpchatter-server v1.0");
     ChatProtocol::writeString(sock, identity);
+    ChatProtocol::writeString(sock, publicIP);
     ChatProtocol::writeString(sock, "RSRV");
     ChatProtocol::flush(sock);
     return true;
 }
 
-int mainServer()
+int mainServer(std::string publicIP)
 {
     std::cout << "xpchatserver SERVER" << std::endl;
 
     std::string warning = "Your server will not be advertised to clients but they will be able to connect directly.";
     try
     {
-        if (!connectToCentral())
+        if (!connectToCentral(publicIP))
         {
             std::cout << "Failed to connect to central. " << warning << std::endl;
         }

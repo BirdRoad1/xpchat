@@ -24,5 +24,12 @@ int main(int argc, char **argv)
         }
     }
 
-    return mainServer();
+    if (argc != 2) {
+        std::cout << "Usage: xpchatserver <public ip>" << std::endl;
+        return 1;
+    }
+
+    std::string ip = std::string(argv[1]);
+
+    return mainServer(ip);
 }

@@ -42,8 +42,20 @@ inline void handleServerConnection(std::string ip, int fd)
     }
 
     std::cout << "Identity: " << identity << std::endl;
-
     bool isServer = identity.starts_with("xpchatter-server");
+
+    std::string publicIP;
+    if (isServer)
+    {
+        if (!ChatProtocol::readString(fd, publicIP))
+        {
+            std::cout << "Client did not tell us their public IP! Closing connection" << std::endl;
+            closeServerConnection(fd, ip);
+            return;
+        }
+
+        std::cout << "Public IP: " << publicIP << std::endl;
+    }
 
     time_t lastRegistrationTime = 0;
     while (1)
@@ -70,7 +82,7 @@ inline void handleServerConnection(std::string ip, int fd)
                 {
                     // Register server
                     lastRegistrationTime = now;
-                    serverList.addPeer({{fd, ip, identity, lastRegistrationTime}});
+                    serverList.addPeer({{fd, publicIP, identity, lastRegistrationTime}});
                 }
             }
             else if (cmd == "LSRV")

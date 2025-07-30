@@ -5,6 +5,7 @@
 #include <stdexcept>
 #include <iostream>
 #include <vector>
+#include <ws2tcpip.h>
 
 int Central::fd = -1;
 
@@ -15,10 +16,33 @@ bool Central::connect()
         return true;
     }
 
+    addrinfo hints;
+    hints.ai_socktype = SOCK_STREAM;
+    hints.ai_protocol = IPPROTO_TCP;
+    hints.ai_family = AF_INET;
+
+    addrinfo *result;
+
+    if (getaddrinfo("xpchatcentral.jlmsz.com", NULL, &hints, &result) != 0)
+    {
+        std::cout << "Failed to resolve xpchatcentral.jlmsz.com!" << std::endl;
+        return false;
+    }
+
+    if (result == NULL)
+    {
+        std::cout << "No IPs found for xpchatcentral.jlmsz.com" << std::endl;
+        return false;
+    }
+
+    sockaddr_in *resolvedAddr = (sockaddr_in *)result->ai_addr;
+
     sockaddr_in serv_addr;
     serv_addr.sin_family = AF_INET;
-    serv_addr.sin_addr.s_addr = inet_addr("192.168.100.1");
+    serv_addr.sin_addr.s_addr = resolvedAddr->sin_addr.s_addr;
     serv_addr.sin_port = htons(28492);
+
+    freeaddrinfo(result);
 
     // create socket
     SOCKET sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
@@ -54,9 +78,11 @@ bool Central::disconnect()
     ChatProtocol::flush(fd);
     closesocket(fd);
     fd = -1;
+    return true;
 }
 
-bool Central::isConnected() {
+bool Central::isConnected()
+{
     return fd >= 0;
 }
 
